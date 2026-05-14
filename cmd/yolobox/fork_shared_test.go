@@ -292,3 +292,13 @@ func TestMergeSharedPathsCliDuplicateDeduplicated(t *testing.T) {
 		t.Fatalf("expected last CLI entry to win: %+v", merged)
 	}
 }
+
+func TestMergeSharedPathsRejectsHiddenParentEscape(t *testing.T) {
+	_, err := mergeSharedPaths(
+		nil,
+		[]SharedPath{{Path: "foo/../bar", Mode: "rw"}},
+	)
+	if err == nil {
+		t.Fatal("expected merge to reject path containing '..' segment")
+	}
+}

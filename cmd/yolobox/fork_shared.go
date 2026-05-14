@@ -154,28 +154,29 @@ func parseShareFlag(value string) (SharedPath, error) {
 // mergeSharedPaths combines TOML entries with CLI --share entries.
 // CLI entries override TOML entries on path collision (CLI wins).
 // Among CLI entries themselves, the last one wins.
-// After merge, the full list is re-validated (overlap and dedup checks).
+// After merge, the full list is run through validateSharedPaths, which
+// performs the ".."-escape check on raw input, normalizes paths in place,
+// and runs the dedup + prefix-overlap checks. Inputs are passed through
+// with only whitespace trimmed so that validate's raw-segment defense remains
+// effective.
 //
 // Returns the merged + validated list; on validation failure returns the error.
 func mergeSharedPaths(fromToml, fromCli []SharedPath) ([]SharedPath, error) {
-	// Use an ordered append + map-tracked indices so output order is:
-	// 1. TOML entries in declared order (with CLI-overridden modes where present)
-	// 2. CLI-only entries appended in declared order
 	indexByPath := make(map[string]int)
 	var result []SharedPath
 	for _, e := range fromToml {
-		clean := path.Clean(strings.TrimSpace(e.Path))
-		indexByPath[clean] = len(result)
-		result = append(result, SharedPath{Path: clean, Mode: e.Mode})
+		key := strings.TrimSpace(e.Path)
+		indexByPath[key] = len(result)
+		result = append(result, SharedPath{Path: key, Mode: e.Mode})
 	}
 	for _, e := range fromCli {
-		clean := path.Clean(strings.TrimSpace(e.Path))
-		if idx, ok := indexByPath[clean]; ok {
+		key := strings.TrimSpace(e.Path)
+		if idx, ok := indexByPath[key]; ok {
 			result[idx].Mode = e.Mode
 			continue
 		}
-		indexByPath[clean] = len(result)
-		result = append(result, SharedPath{Path: clean, Mode: e.Mode})
+		indexByPath[key] = len(result)
+		result = append(result, SharedPath{Path: key, Mode: e.Mode})
 	}
 	if err := validateSharedPaths(result); err != nil {
 		return nil, err
