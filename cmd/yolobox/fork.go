@@ -21,6 +21,7 @@ type forkInfo struct {
 	Copy           string
 	RunDir         string
 	ComposeProject string
+	SharedPaths    []SharedPath
 }
 
 func runFork(args []string, projectDir string) error {
@@ -187,6 +188,7 @@ func (info forkInfo) forkConfig() ForkConfig {
 		Source:         info.Source,
 		Copy:           info.Copy,
 		ComposeProject: info.ComposeProject,
+		SharedPaths:    info.SharedPaths,
 	}
 }
 

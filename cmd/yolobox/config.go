@@ -15,10 +15,11 @@ type CustomizeConfig struct {
 }
 
 type ForkConfig struct {
-	Name           string `toml:"-"`
-	Source         string `toml:"-"`
-	Copy           string `toml:"-"`
-	ComposeProject string `toml:"-"`
+	Name           string       `toml:"-"`
+	Source         string       `toml:"-"`
+	Copy           string       `toml:"-"`
+	ComposeProject string       `toml:"-"`
+	SharedPaths    []SharedPath `toml:"-"`
 }
 
 type Config struct {
