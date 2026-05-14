@@ -121,3 +121,63 @@ shared_paths = [
 		t.Fatalf("second entry wrong: %+v", cfg.Fork.SharedPaths[1])
 	}
 }
+
+func TestValidateSharedPathsAcceptsValid(t *testing.T) {
+	cases := [][]SharedPath{
+		{{Path: "game", Mode: "rw"}},
+		{{Path: "vendored", Mode: "ro"}, {Path: "node_modules", Mode: "rw"}},
+		{{Path: "dir/sub", Mode: "rw"}},                  // nested ok
+		{{Path: ".env", Mode: "rw"}},                     // hidden file ok
+	}
+	for _, sp := range cases {
+		if err := validateSharedPaths(sp); err != nil {
+			t.Fatalf("expected %v to be valid: %v", sp, err)
+		}
+	}
+}
+
+func TestValidateSharedPathsRejectsAbsolute(t *testing.T) {
+	err := validateSharedPaths([]SharedPath{{Path: "/etc", Mode: "rw"}})
+	if err == nil {
+		t.Fatal("expected absolute path rejection")
+	}
+}
+
+func TestValidateSharedPathsRejectsParentEscape(t *testing.T) {
+	cases := []string{"..", "../foo", "foo/../bar"}
+	for _, p := range cases {
+		if err := validateSharedPaths([]SharedPath{{Path: p, Mode: "rw"}}); err == nil {
+			t.Fatalf("expected rejection for %q", p)
+		}
+	}
+}
+
+func TestValidateSharedPathsRejectsBadMode(t *testing.T) {
+	err := validateSharedPaths([]SharedPath{{Path: "game", Mode: "yes"}})
+	if err == nil {
+		t.Fatal("expected mode rejection")
+	}
+}
+
+func TestValidateSharedPathsRejectsNestedOverlap(t *testing.T) {
+	err := validateSharedPaths([]SharedPath{
+		{Path: "game", Mode: "rw"},
+		{Path: "game/decompile", Mode: "ro"},
+	})
+	if err == nil {
+		t.Fatal("expected nested-path rejection")
+	}
+	if !strings.Contains(err.Error(), "game/decompile") || !strings.Contains(err.Error(), "game") {
+		t.Fatalf("error should name both paths, got: %v", err)
+	}
+}
+
+func TestValidateSharedPathsRejectsDuplicate(t *testing.T) {
+	err := validateSharedPaths([]SharedPath{
+		{Path: "game", Mode: "rw"},
+		{Path: "game", Mode: "ro"},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate-path rejection")
+	}
+}

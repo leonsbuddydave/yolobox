@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path"
 	"strings"
 )
 
@@ -54,4 +55,65 @@ func (s *SharedPath) UnmarshalTOML(data any) error {
 // ForkSettings holds the parsed [fork] TOML table.
 type ForkSettings struct {
 	SharedPaths []SharedPath `toml:"shared_paths"`
+}
+
+// validateSharedPaths enforces the rules from the design doc:
+//   - path must be relative (no absolute, no leading "/")
+//   - path must not escape the project root (no "..", no "foo/../bar")
+//   - mode must be "rw" or "ro"
+//   - no two entries may have the same path
+//   - no entry's path may be a prefix of another entry's path
+func validateSharedPaths(entries []SharedPath) error {
+	seen := make(map[string]struct{}, len(entries))
+	for i := range entries {
+		e := &entries[i]
+		if e.Mode != "rw" && e.Mode != "ro" {
+			return fmt.Errorf("shared_paths entry %q: mode must be \"rw\" or \"ro\", got %q", e.Path, e.Mode)
+		}
+		raw := strings.TrimSpace(e.Path)
+		if raw == "" {
+			return fmt.Errorf("shared_paths entry has empty path")
+		}
+		if path.IsAbs(raw) || strings.HasPrefix(raw, "/") {
+			return fmt.Errorf("shared_paths entry %q must be relative to the project root", raw)
+		}
+		// Reject any ".." segment in the raw path before cleaning, since
+		// path.Clean would collapse e.g. "foo/../bar" to "bar" and hide the escape.
+		for _, seg := range strings.Split(raw, "/") {
+			if seg == ".." {
+				return fmt.Errorf("shared_paths entry %q escapes the project root", raw)
+			}
+		}
+		clean := path.Clean(strings.TrimPrefix(raw, "./"))
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
+			return fmt.Errorf("shared_paths entry %q escapes the project root", raw)
+		}
+		e.Path = clean
+		if _, dup := seen[clean]; dup {
+			return fmt.Errorf("shared_paths contains duplicate entry %q", clean)
+		}
+		seen[clean] = struct{}{}
+	}
+	// Nested-overlap check (after dedup so error messages are clean).
+	for i := range entries {
+		for j := range entries {
+			if i == j {
+				continue
+			}
+			if isPrefixPath(entries[i].Path, entries[j].Path) {
+				return fmt.Errorf("shared_paths entries overlap: %q is a prefix of %q (consolidate to one entry)",
+					entries[i].Path, entries[j].Path)
+			}
+		}
+	}
+	return nil
+}
+
+// isPrefixPath returns true if parent is a strict path-segment prefix of child.
+// "game" is a prefix of "game/decompile" but not of "gameplay".
+func isPrefixPath(parent, child string) bool {
+	if parent == child {
+		return false
+	}
+	return strings.HasPrefix(child, parent+"/")
 }
