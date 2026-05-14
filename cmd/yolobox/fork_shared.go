@@ -128,6 +128,19 @@ func isPrefixPath(parent, child string) bool {
 	return strings.HasPrefix(child, parent+"/")
 }
 
+// parseShareFlagsList parses every --share value, returning the slice.
+func parseShareFlagsList(values []string) ([]SharedPath, error) {
+	out := make([]SharedPath, 0, len(values))
+	for _, v := range values {
+		sp, err := parseShareFlag(v)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sp)
+	}
+	return out, nil
+}
+
 // parseShareFlag parses a --share value: "path" or "path:rw" or "path:ro".
 // Returned SharedPath is *not yet validated* against project structure — call
 // validateSharedPaths after merging with TOML entries.
@@ -256,6 +269,34 @@ func createSharedPathPlaceholders(src, dst string, shared []SharedPath) ([]Share
 		resolved = append(resolved, s)
 	}
 	return resolved, nil
+}
+
+// loadSharedPathsFromConfig reads .yolobox.toml from projectDir and returns its
+// [fork].shared_paths entries (or nil if the file or section is absent).
+func loadSharedPathsFromConfig(projectDir string) ([]SharedPath, error) {
+	cfg, err := loadConfig(projectDir)
+	if err != nil {
+		return nil, err
+	}
+	return cfg.Fork.SharedPaths, nil
+}
+
+// resolveExistingSharedPaths returns the subset of shared paths whose source
+// still exists on disk. Used by resume, which should not (re)create
+// placeholders in the fork dir.
+func resolveExistingSharedPaths(src string, shared []SharedPath) ([]SharedPath, error) {
+	out := make([]SharedPath, 0, len(shared))
+	for _, s := range shared {
+		if _, err := os.Stat(filepath.Join(src, filepath.FromSlash(s.Path))); err != nil {
+			if os.IsNotExist(err) {
+				warn("shared_paths: skipping %q (does not exist in source)", s.Path)
+				continue
+			}
+			return nil, fmt.Errorf("shared_paths: stat %s: %w", s.Path, err)
+		}
+		out = append(out, s)
+	}
+	return out, nil
 }
 
 // buildSharedPathMountArgs returns the -v args needed to overlay each shared

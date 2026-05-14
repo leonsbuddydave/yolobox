@@ -56,7 +56,9 @@ func runForkCreate(args []string, projectDir string) error {
 	fs := flag.NewFlagSet("fork", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var name string
+	var shareFlags stringSliceFlag
 	fs.StringVar(&name, "name", "", "developer/environment name")
+	fs.Var(&shareFlags, "share", "share a project path (skip the fork copy, bind-mount from original). Repeatable. Form: <path>[:rw|:ro]")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			printForkUsage()
@@ -71,6 +73,19 @@ func runForkCreate(args []string, projectDir string) error {
 		return err
 	}
 
+	cliShared, err := parseShareFlagsList(shareFlags)
+	if err != nil {
+		return err
+	}
+	tomlShared, err := loadSharedPathsFromConfig(projectDir)
+	if err != nil {
+		return err
+	}
+	merged, err := mergeSharedPaths(tomlShared, cliShared)
+	if err != nil {
+		return err
+	}
+
 	info, err := newForkInfo(projectDir, name)
 	if err != nil {
 		return err
@@ -81,10 +96,20 @@ func runForkCreate(args []string, projectDir string) error {
 	if err := os.MkdirAll(info.Copy, 0755); err != nil {
 		return fmt.Errorf("failed to create copied folder: %w", err)
 	}
-	if err := copyFullDirectory(info.Source, info.Copy); err != nil {
+	for _, s := range merged {
+		fmt.Fprintf(os.Stderr, "Sharing %s (%s) — skipping copy\n", filepath.Join(info.Source, s.Path), s.Mode)
+	}
+	if err := copyForkSource(info.Source, info.Copy, merged); err != nil {
 		_ = os.RemoveAll(info.Copy)
 		return err
 	}
+	resolved, err := createSharedPathPlaceholders(info.Source, info.Copy, merged)
+	if err != nil {
+		_ = os.RemoveAll(info.Copy)
+		return err
+	}
+	info.SharedPaths = resolved
+
 	success("Created fork %s at %s", info.Name, info.Copy)
 
 	commandArgs := fs.Args()
@@ -92,6 +117,13 @@ func runForkCreate(args []string, projectDir string) error {
 }
 
 func runForkResume(args []string, projectDir string) error {
+	fs := flag.NewFlagSet("fork-resume", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	var shareFlags stringSliceFlag
+	fs.Var(&shareFlags, "share", "shared path overlay. Repeatable. Form: <path>[:rw|:ro]")
+	// We need to support: yolobox fork resume <name> [--share ...] [cmd...]
+	// flag.FlagSet stops at the first non-flag, so we cannot put --share before the name.
+	// Strategy: extract the name (first positional), parse remaining args.
 	if len(args) == 0 {
 		return fmt.Errorf("yolobox fork resume requires a developer/environment name")
 	}
@@ -99,6 +131,14 @@ func runForkResume(args []string, projectDir string) error {
 	if err := validateForkName(name); err != nil {
 		return err
 	}
+	if err := fs.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printForkUsage()
+			return errHelp
+		}
+		return err
+	}
+
 	info, err := newForkInfo(projectDir, name)
 	if err != nil {
 		return err
@@ -109,7 +149,27 @@ func runForkResume(args []string, projectDir string) error {
 		}
 		return err
 	}
-	commandArgs := args[1:]
+
+	cliShared, err := parseShareFlagsList(shareFlags)
+	if err != nil {
+		return err
+	}
+	// Resume reads TOML from the copy dir (which the user may have edited).
+	tomlShared, err := loadSharedPathsFromConfig(info.Copy)
+	if err != nil {
+		return err
+	}
+	merged, err := mergeSharedPaths(tomlShared, cliShared)
+	if err != nil {
+		return err
+	}
+	resolved, err := resolveExistingSharedPaths(info.Source, merged)
+	if err != nil {
+		return err
+	}
+	info.SharedPaths = resolved
+
+	commandArgs := fs.Args()
 	return runForkedYolobox(info, commandArgs)
 }
 
