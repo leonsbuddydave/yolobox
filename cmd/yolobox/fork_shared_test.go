@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -88,5 +90,32 @@ shared_paths = [""]
 	_, err := toml.Decode(in, &cfg)
 	if err == nil {
 		t.Fatal("expected error for empty path")
+	}
+}
+
+func TestLoadConfigReturnsSharedPaths(t *testing.T) {
+	dir := t.TempDir()
+	toml := `
+[fork]
+shared_paths = [
+  "game",
+  { path = "vendored", mode = "ro" },
+]
+`
+	if err := os.WriteFile(filepath.Join(dir, ".yolobox.toml"), []byte(toml), 0644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+	cfg, err := loadConfig(dir)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if len(cfg.Fork.SharedPaths) != 2 {
+		t.Fatalf("expected 2 shared paths after loadConfig, got %d: %+v", len(cfg.Fork.SharedPaths), cfg.Fork.SharedPaths)
+	}
+	if cfg.Fork.SharedPaths[0].Path != "game" || cfg.Fork.SharedPaths[0].Mode != "rw" {
+		t.Fatalf("first entry wrong: %+v", cfg.Fork.SharedPaths[0])
+	}
+	if cfg.Fork.SharedPaths[1].Path != "vendored" || cfg.Fork.SharedPaths[1].Mode != "ro" {
+		t.Fatalf("second entry wrong: %+v", cfg.Fork.SharedPaths[1])
 	}
 }

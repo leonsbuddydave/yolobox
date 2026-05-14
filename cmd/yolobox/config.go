@@ -152,6 +152,9 @@ func mergeConfig(dst *Config, src Config) {
 	if len(src.CopyAs) > 0 {
 		dst.CopyAs = append([]string{}, src.CopyAs...)
 	}
+	if len(src.Fork.SharedPaths) > 0 {
+		dst.Fork.SharedPaths = append([]SharedPath{}, src.Fork.SharedPaths...)
+	}
 	if src.SSHAgent {
 		dst.SSHAgent = true
 	}

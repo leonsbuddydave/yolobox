@@ -8,13 +8,13 @@ import (
 // SharedPath represents a project subpath that, in fork mode, is bind-mounted
 // from the original repo into the container instead of being physically copied.
 type SharedPath struct {
-	Path string
-	Mode string // "rw" or "ro"
+	Path string `toml:"path"`
+	Mode string `toml:"mode"` // "rw" or "ro"
 }
 
 // UnmarshalTOML accepts either a string (defaults to mode "rw") or a table
 // with explicit { path, mode } fields.
-func (s *SharedPath) UnmarshalTOML(data interface{}) error {
+func (s *SharedPath) UnmarshalTOML(data any) error {
 	switch v := data.(type) {
 	case string:
 		if strings.TrimSpace(v) == "" {
@@ -23,7 +23,7 @@ func (s *SharedPath) UnmarshalTOML(data interface{}) error {
 		s.Path = v
 		s.Mode = "rw"
 		return nil
-	case map[string]interface{}:
+	case map[string]any:
 		pathRaw, ok := v["path"]
 		if !ok {
 			return fmt.Errorf("shared_paths entry missing 'path' field")
