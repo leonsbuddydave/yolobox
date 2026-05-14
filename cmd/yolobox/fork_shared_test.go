@@ -363,3 +363,70 @@ func TestCopyForkSourceErrorsWhenRsyncMissing(t *testing.T) {
 		t.Fatalf("error should mention rsync, got: %v", err)
 	}
 }
+
+func TestCreateSharedPathPlaceholdersForDirectory(t *testing.T) {
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "game"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	dst := t.TempDir()
+	resolved, err := createSharedPathPlaceholders(src, dst, []SharedPath{{Path: "game", Mode: "rw"}})
+	if err != nil {
+		t.Fatalf("placeholders: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved entry, got %d", len(resolved))
+	}
+	info, err := os.Stat(filepath.Join(dst, "game"))
+	if err != nil {
+		t.Fatalf("placeholder missing: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected placeholder to be a directory")
+	}
+}
+
+func TestCreateSharedPathPlaceholdersForFile(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, ".env"), []byte("X=1\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	dst := t.TempDir()
+	resolved, err := createSharedPathPlaceholders(src, dst, []SharedPath{{Path: ".env", Mode: "rw"}})
+	if err != nil {
+		t.Fatalf("placeholders: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved entry, got %d", len(resolved))
+	}
+	info, err := os.Stat(filepath.Join(dst, ".env"))
+	if err != nil {
+		t.Fatalf("placeholder missing: %v", err)
+	}
+	if info.IsDir() {
+		t.Fatal("expected placeholder to be a file, not directory")
+	}
+}
+
+func TestCreateSharedPathPlaceholdersOmitsMissingSourceFromResolved(t *testing.T) {
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "real"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	dst := t.TempDir()
+	resolved, err := createSharedPathPlaceholders(src, dst, []SharedPath{
+		{Path: "missing", Mode: "rw"},
+		{Path: "real", Mode: "rw"},
+	})
+	if err != nil {
+		t.Fatalf("placeholders: %v", err)
+	}
+	if len(resolved) != 1 || resolved[0].Path != "real" {
+		t.Fatalf("expected only 'real' resolved, got %+v", resolved)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "missing")); !os.IsNotExist(err) {
+		t.Fatalf("expected no placeholder for missing path, got err=%v", err)
+	}
+}

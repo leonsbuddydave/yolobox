@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -212,4 +214,46 @@ func copyForkSource(src, dst string, shared []SharedPath) error {
 		return fmt.Errorf("rsync failed: %s", trimmed)
 	}
 	return nil
+}
+
+// createSharedPathPlaceholders creates the empty mount targets inside the
+// fork's copy directory and returns the subset of shared paths whose source
+// actually exists in src (the only ones we should mount).
+//
+// Behavior:
+//   - source is a directory: create an empty directory at dst/<path>.
+//   - source is a file: create an empty file at dst/<path>.
+//   - source does not exist: warn, skip (drop from resolved list).
+func createSharedPathPlaceholders(src, dst string, shared []SharedPath) ([]SharedPath, error) {
+	resolved := make([]SharedPath, 0, len(shared))
+	for _, s := range shared {
+		srcPath := filepath.Join(src, filepath.FromSlash(s.Path))
+		info, err := os.Stat(srcPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				warn("shared_paths: skipping %q (does not exist in source)", s.Path)
+				continue
+			}
+			return nil, fmt.Errorf("shared_paths: stat %s: %w", s.Path, err)
+		}
+		target := filepath.Join(dst, filepath.FromSlash(s.Path))
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return nil, fmt.Errorf("shared_paths: prepare placeholder %s: %w", s.Path, err)
+		}
+		if info.IsDir() {
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return nil, fmt.Errorf("shared_paths: create dir placeholder %s: %w", s.Path, err)
+			}
+		} else {
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+			if err != nil {
+				return nil, fmt.Errorf("shared_paths: create file placeholder %s: %w", s.Path, err)
+			}
+			if err := f.Close(); err != nil {
+				return nil, fmt.Errorf("shared_paths: close file placeholder %s: %w", s.Path, err)
+			}
+		}
+		resolved = append(resolved, s)
+	}
+	return resolved, nil
 }
