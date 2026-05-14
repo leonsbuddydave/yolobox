@@ -2541,3 +2541,50 @@ func TestFindSSHAgentSocketMacOSNoSSHAuthSock(t *testing.T) {
 		t.Error("expected non-empty socket path")
 	}
 }
+
+func TestBuildRunArgsForkSharedPathsAppendedAfterProjectMount(t *testing.T) {
+	projectDir := t.TempDir()
+	fork := ForkConfig{
+		Name:           "bruno",
+		Source:         filepath.Join(projectDir, "source"),
+		Copy:           filepath.Join(projectDir, "copy"),
+		ComposeProject: "folder-123-bruno",
+		SharedPaths: []SharedPath{
+			{Path: "game", Mode: "rw"},
+			{Path: "vendored", Mode: "ro"},
+		},
+	}
+	cfg := Config{Image: "test-image"}
+	applyForkConfig(&cfg, &fork)
+
+	args, _, err := buildRunArgs(cfg, fork.Copy, []string{"bash"}, false)
+	if err != nil {
+		t.Fatalf("buildRunArgs: %v", err)
+	}
+
+	projectMountIdx := -1
+	rwShareIdx := -1
+	roShareIdx := -1
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] != "-v" {
+			continue
+		}
+		switch args[i+1] {
+		case fork.Copy + ":" + fork.Source:
+			projectMountIdx = i
+		case fork.Source + "/game:" + fork.Source + "/game":
+			rwShareIdx = i
+		case fork.Source + "/vendored:" + fork.Source + "/vendored:ro":
+			roShareIdx = i
+		}
+	}
+	if projectMountIdx == -1 {
+		t.Fatalf("missing project mount in args %v", args)
+	}
+	if rwShareIdx == -1 || roShareIdx == -1 {
+		t.Fatalf("missing shared-path mounts in args %v", args)
+	}
+	if rwShareIdx < projectMountIdx || roShareIdx < projectMountIdx {
+		t.Fatalf("shared mounts must come AFTER project mount; got proj=%d rw=%d ro=%d", projectMountIdx, rwShareIdx, roShareIdx)
+	}
+}

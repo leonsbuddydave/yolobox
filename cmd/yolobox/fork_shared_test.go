@@ -430,3 +430,31 @@ func TestCreateSharedPathPlaceholdersOmitsMissingSourceFromResolved(t *testing.T
 		t.Fatalf("expected no placeholder for missing path, got err=%v", err)
 	}
 }
+
+func TestBuildSharedPathMountArgs(t *testing.T) {
+	sourceRoot := "/host/src"
+	shared := []SharedPath{
+		{Path: "game", Mode: "rw"},
+		{Path: "vendored", Mode: "ro"},
+	}
+	args := buildSharedPathMountArgs(sourceRoot, shared)
+	want := []string{
+		"-v", "/host/src/game:/host/src/game",
+		"-v", "/host/src/vendored:/host/src/vendored:ro",
+	}
+	if len(args) != len(want) {
+		t.Fatalf("got %v, want %v", args, want)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("arg %d: got %q, want %q", i, args[i], want[i])
+		}
+	}
+}
+
+func TestBuildSharedPathMountArgsEmpty(t *testing.T) {
+	args := buildSharedPathMountArgs("/x", nil)
+	if len(args) != 0 {
+		t.Fatalf("expected no args, got %v", args)
+	}
+}

@@ -257,3 +257,23 @@ func createSharedPathPlaceholders(src, dst string, shared []SharedPath) ([]Share
 	}
 	return resolved, nil
 }
+
+// buildSharedPathMountArgs returns the -v args needed to overlay each shared
+// path onto its corresponding location inside the container. sourceRoot is
+// the host path of the original (non-fork) project — same path that the fork
+// directory is mounted at inside the container.
+func buildSharedPathMountArgs(sourceRoot string, shared []SharedPath) []string {
+	if len(shared) == 0 {
+		return nil
+	}
+	args := make([]string, 0, 2*len(shared))
+	for _, s := range shared {
+		host := filepath.Join(sourceRoot, filepath.FromSlash(s.Path))
+		spec := host + ":" + host
+		if s.Mode == "ro" {
+			spec += ":ro"
+		}
+		args = append(args, "-v", spec)
+	}
+	return args
+}

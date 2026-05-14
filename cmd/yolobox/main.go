@@ -1202,6 +1202,12 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 		args = append(args, "-v", projectMount)
 	}
 
+	// Shared paths (fork-mode only): overlay original host paths on top of the
+	// project mount so forks see live data instead of copies.
+	if !cfg.NoProject && cfg.ForkRun.Name != "" && len(cfg.ForkRun.SharedPaths) > 0 {
+		args = append(args, buildSharedPathMountArgs(cfg.ForkRun.Source, cfg.ForkRun.SharedPaths)...)
+	}
+
 	// Named volumes for persistence (skip if --scratch).
 	// Rootless Podman on SELinux-enabled hosts assigns per-container MCS
 	// labels; without :Z, files created in one run are inaccessible to the
