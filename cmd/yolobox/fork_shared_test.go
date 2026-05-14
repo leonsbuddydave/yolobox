@@ -94,6 +94,8 @@ shared_paths = [""]
 }
 
 func TestLoadConfigReturnsSharedPaths(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	toml := `
 [fork]
