@@ -1204,8 +1204,16 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 
 	// Shared paths (fork-mode only): overlay original host paths on top of the
 	// project mount so forks see live data instead of copies.
-	if !cfg.NoProject && cfg.ForkRun.Name != "" && len(cfg.ForkRun.SharedPaths) > 0 {
-		args = append(args, buildSharedPathMountArgs(cfg.ForkRun.Source, cfg.ForkRun.SharedPaths)...)
+	if cfg.ForkRun.Name != "" && len(cfg.ForkRun.SharedPaths) > 0 {
+		if cfg.NoProject {
+			warn("shared_paths ignored: --no-project is set, no anchor for shared mounts")
+		} else {
+			kept, dropped := filterSharedAgainstExclude(cfg.ForkRun.SharedPaths, cfg.Exclude)
+			for _, d := range dropped {
+				warn("shared_paths: %q collides with --exclude pattern; skipping bind-mount", d.Path)
+			}
+			args = append(args, buildSharedPathMountArgs(cfg.ForkRun.Source, kept)...)
+		}
 	}
 
 	// Named volumes for persistence (skip if --scratch).

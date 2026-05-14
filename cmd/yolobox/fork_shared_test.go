@@ -458,3 +458,25 @@ func TestBuildSharedPathMountArgsEmpty(t *testing.T) {
 		t.Fatalf("expected no args, got %v", args)
 	}
 }
+
+func TestFilterSharedAgainstExcludeDropsCollisions(t *testing.T) {
+	shared := []SharedPath{
+		{Path: "game", Mode: "rw"},
+		{Path: "vendored", Mode: "ro"},
+	}
+	filtered, dropped := filterSharedAgainstExclude(shared, []string{"vendored"})
+	if len(filtered) != 1 || filtered[0].Path != "game" {
+		t.Fatalf("expected only game to remain, got %+v", filtered)
+	}
+	if len(dropped) != 1 || dropped[0].Path != "vendored" {
+		t.Fatalf("expected vendored dropped, got %+v", dropped)
+	}
+}
+
+func TestFilterSharedAgainstExcludeNoCollision(t *testing.T) {
+	shared := []SharedPath{{Path: "game", Mode: "rw"}}
+	filtered, dropped := filterSharedAgainstExclude(shared, []string{"game/*"}) // pattern matches contents, not "game" itself
+	if len(filtered) != 1 || len(dropped) != 0 {
+		t.Fatalf("expected no collision for child-content pattern, got filtered=%+v dropped=%+v", filtered, dropped)
+	}
+}

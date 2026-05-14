@@ -2588,3 +2588,25 @@ func TestBuildRunArgsForkSharedPathsAppendedAfterProjectMount(t *testing.T) {
 		t.Fatalf("shared mounts must come AFTER project mount; got proj=%d rw=%d ro=%d", projectMountIdx, rwShareIdx, roShareIdx)
 	}
 }
+
+func TestBuildRunArgsForkSharedPathsIgnoredWithNoProject(t *testing.T) {
+	projectDir := t.TempDir()
+	fork := ForkConfig{
+		Name:        "bruno",
+		Source:      filepath.Join(projectDir, "source"),
+		Copy:        filepath.Join(projectDir, "copy"),
+		SharedPaths: []SharedPath{{Path: "game", Mode: "rw"}},
+	}
+	cfg := Config{Image: "test-image", NoProject: true}
+	applyForkConfig(&cfg, &fork)
+
+	args, _, err := buildRunArgs(cfg, fork.Copy, []string{"bash"}, false)
+	if err != nil {
+		t.Fatalf("buildRunArgs: %v", err)
+	}
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-v" && strings.Contains(args[i+1], "/game") {
+			t.Fatalf("shared mount should not be present with --no-project, got %s", args[i+1])
+		}
+	}
+}

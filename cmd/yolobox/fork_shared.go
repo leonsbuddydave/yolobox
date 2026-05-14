@@ -299,6 +299,39 @@ func resolveExistingSharedPaths(src string, shared []SharedPath) ([]SharedPath, 
 	return out, nil
 }
 
+// filterSharedAgainstExclude returns (kept, dropped). A shared path is
+// dropped if any --exclude pattern matches the shared path itself (literal
+// path-segment match using yolobox's existing project pattern matcher).
+// Patterns that only match descendants of the shared path do NOT collide.
+func filterSharedAgainstExclude(shared []SharedPath, excludePatterns []string) (kept []SharedPath, dropped []SharedPath) {
+	if len(shared) == 0 || len(excludePatterns) == 0 {
+		return shared, nil
+	}
+	normalized := make([]string, 0, len(excludePatterns))
+	for _, p := range excludePatterns {
+		if n, err := normalizeProjectPattern(p); err == nil {
+			normalized = append(normalized, n)
+		}
+		// If normalization fails, leave it to validateProjectFilteringConfig
+		// to surface the user-facing error; we just don't match against it.
+	}
+	for _, s := range shared {
+		collide := false
+		for _, pat := range normalized {
+			if matchProjectPattern(pat, s.Path) {
+				collide = true
+				break
+			}
+		}
+		if collide {
+			dropped = append(dropped, s)
+		} else {
+			kept = append(kept, s)
+		}
+	}
+	return kept, dropped
+}
+
 // buildSharedPathMountArgs returns the -v args needed to overlay each shared
 // path onto its corresponding location inside the container. sourceRoot is
 // the host path of the original (non-fork) project — same path that the fork
