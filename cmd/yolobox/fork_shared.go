@@ -124,3 +124,29 @@ func isPrefixPath(parent, child string) bool {
 	}
 	return strings.HasPrefix(child, parent+"/")
 }
+
+// parseShareFlag parses a --share value: "path" or "path:rw" or "path:ro".
+// Returned SharedPath is *not yet validated* against project structure — call
+// validateSharedPaths after merging with TOML entries.
+func parseShareFlag(value string) (SharedPath, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return SharedPath{}, fmt.Errorf("--share value must not be empty")
+	}
+	parts := strings.Split(value, ":")
+	if len(parts) > 2 {
+		return SharedPath{}, fmt.Errorf("--share value %q: expected <path>[:rw|:ro]", value)
+	}
+	pathStr := strings.TrimSpace(parts[0])
+	if pathStr == "" {
+		return SharedPath{}, fmt.Errorf("--share value %q: path is empty", value)
+	}
+	mode := "rw"
+	if len(parts) == 2 {
+		mode = strings.TrimSpace(parts[1])
+		if mode != "rw" && mode != "ro" {
+			return SharedPath{}, fmt.Errorf("--share value %q: mode must be rw or ro, got %q", value, mode)
+		}
+	}
+	return SharedPath{Path: pathStr, Mode: mode}, nil
+}

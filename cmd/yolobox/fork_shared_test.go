@@ -181,3 +181,46 @@ func TestValidateSharedPathsRejectsDuplicate(t *testing.T) {
 		t.Fatal("expected duplicate-path rejection")
 	}
 }
+
+func TestParseShareFlag(t *testing.T) {
+	cases := []struct {
+		in    string
+		want  SharedPath
+	}{
+		{"game", SharedPath{Path: "game", Mode: "rw"}},
+		{"game:rw", SharedPath{Path: "game", Mode: "rw"}},
+		{"game:ro", SharedPath{Path: "game", Mode: "ro"}},
+		{"sub/dir", SharedPath{Path: "sub/dir", Mode: "rw"}},
+		{"sub/dir:ro", SharedPath{Path: "sub/dir", Mode: "ro"}},
+	}
+	for _, c := range cases {
+		got, err := parseShareFlag(c.in)
+		if err != nil {
+			t.Fatalf("%q: unexpected error: %v", c.in, err)
+		}
+		if got != c.want {
+			t.Fatalf("%q: want %+v, got %+v", c.in, c.want, got)
+		}
+	}
+}
+
+func TestParseShareFlagRejectsBadMode(t *testing.T) {
+	if _, err := parseShareFlag("game:yes"); err == nil {
+		t.Fatal("expected error for invalid mode")
+	}
+}
+
+func TestParseShareFlagRejectsEmpty(t *testing.T) {
+	if _, err := parseShareFlag(""); err == nil {
+		t.Fatal("expected error for empty value")
+	}
+	if _, err := parseShareFlag(":ro"); err == nil {
+		t.Fatal("expected error for empty path before colon")
+	}
+}
+
+func TestParseShareFlagRejectsTooManyColons(t *testing.T) {
+	if _, err := parseShareFlag("a:b:c"); err == nil {
+		t.Fatal("expected error for too many colons")
+	}
+}
