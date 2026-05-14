@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -300,5 +301,65 @@ func TestMergeSharedPathsRejectsHiddenParentEscape(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected merge to reject path containing '..' segment")
+	}
+}
+
+func TestCopyForkSourceSkipsSharedPaths(t *testing.T) {
+	if _, err := exec.LookPath("rsync"); err != nil {
+		t.Skip("rsync not available")
+	}
+
+	src := t.TempDir()
+	mustWrite := func(rel string, content string) {
+		full := filepath.Join(src, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(full), err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			t.Fatalf("write %s: %v", full, err)
+		}
+	}
+	mustWrite("keep.txt", "keep\n")
+	mustWrite("game/asset.bin", "asset\n")
+	mustWrite("vendored/lib.so", "lib\n")
+	mustWrite("nested/keep.txt", "nested\n")
+
+	dst := filepath.Join(t.TempDir(), "fork")
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		t.Fatalf("mkdir dst: %v", err)
+	}
+
+	shared := []SharedPath{
+		{Path: "game", Mode: "rw"},
+		{Path: "vendored", Mode: "ro"},
+	}
+	if err := copyForkSource(src, dst, shared); err != nil {
+		t.Fatalf("copyForkSource: %v", err)
+	}
+
+	// Kept files copied
+	for _, rel := range []string{"keep.txt", "nested/keep.txt"} {
+		if _, err := os.Stat(filepath.Join(dst, rel)); err != nil {
+			t.Fatalf("expected %s in fork: %v", rel, err)
+		}
+	}
+	// Shared paths absent at the leaf level (no asset.bin / lib.so copied)
+	for _, rel := range []string{"game/asset.bin", "vendored/lib.so"} {
+		if _, err := os.Stat(filepath.Join(dst, rel)); !os.IsNotExist(err) {
+			t.Fatalf("expected %s NOT in fork, got err=%v", rel, err)
+		}
+	}
+}
+
+func TestCopyForkSourceErrorsWhenRsyncMissing(t *testing.T) {
+	// Simulate missing rsync by setting PATH to an empty dir.
+	emptyDir := t.TempDir()
+	t.Setenv("PATH", emptyDir)
+	err := copyForkSource(t.TempDir(), t.TempDir(), []SharedPath{{Path: "x", Mode: "rw"}})
+	if err == nil {
+		t.Fatal("expected error when rsync is missing")
+	}
+	if !strings.Contains(err.Error(), "rsync") {
+		t.Fatalf("error should mention rsync, got: %v", err)
 	}
 }

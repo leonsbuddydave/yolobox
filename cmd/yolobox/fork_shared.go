@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"path"
 	"strings"
 )
@@ -182,4 +183,33 @@ func mergeSharedPaths(fromToml, fromCli []SharedPath) ([]SharedPath, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+// copyForkSource copies src/. into dst, skipping every entry in shared. If
+// shared is empty it falls back to the existing copyFullDirectory (cp -a) for
+// parity with prior behavior. When shared is non-empty, rsync is used so the
+// excludes are honored deterministically.
+func copyForkSource(src, dst string, shared []SharedPath) error {
+	if len(shared) == 0 {
+		return copyFullDirectory(src, dst)
+	}
+	if _, err := exec.LookPath("rsync"); err != nil {
+		return fmt.Errorf("shared_paths requires rsync, which was not found in PATH: %w", err)
+	}
+	rsyncArgs := []string{"-a"}
+	for _, s := range shared {
+		// rsync excludes anchored to the transfer root are written as "/<path>".
+		rsyncArgs = append(rsyncArgs, "--exclude=/"+s.Path)
+	}
+	rsyncArgs = append(rsyncArgs, src+"/", dst+"/")
+	cmd := exec.Command("rsync", rsyncArgs...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed == "" {
+			trimmed = err.Error()
+		}
+		return fmt.Errorf("rsync failed: %s", trimmed)
+	}
+	return nil
 }
