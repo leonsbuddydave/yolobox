@@ -127,8 +127,8 @@ func TestValidateSharedPathsAcceptsValid(t *testing.T) {
 	cases := [][]SharedPath{
 		{{Path: "game", Mode: "rw"}},
 		{{Path: "vendored", Mode: "ro"}, {Path: "node_modules", Mode: "rw"}},
-		{{Path: "dir/sub", Mode: "rw"}},                  // nested ok
-		{{Path: ".env", Mode: "rw"}},                     // hidden file ok
+		{{Path: "dir/sub", Mode: "rw"}}, // nested ok
+		{{Path: ".env", Mode: "rw"}},    // hidden file ok
 	}
 	for _, sp := range cases {
 		if err := validateSharedPaths(sp); err != nil {
@@ -185,8 +185,8 @@ func TestValidateSharedPathsRejectsDuplicate(t *testing.T) {
 
 func TestParseShareFlag(t *testing.T) {
 	cases := []struct {
-		in    string
-		want  SharedPath
+		in   string
+		want SharedPath
 	}{
 		{"game", SharedPath{Path: "game", Mode: "rw"}},
 		{"game:rw", SharedPath{Path: "game", Mode: "rw"}},

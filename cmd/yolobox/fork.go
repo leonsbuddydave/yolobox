@@ -46,9 +46,13 @@ func printForkUsage() {
 	fmt.Fprintln(os.Stderr, "  yolobox fork resume <env> [cmd...]       Reopen an existing copied folder")
 	fmt.Fprintln(os.Stderr, "  yolobox fork discard <env> --force       Delete a copied folder")
 	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "FLAGS:")
+	fmt.Fprintln(os.Stderr, "  --share <p>[:ro|:rw]   Skip the fork copy and bind-mount <p> from the original repo (repeatable)")
+	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "EXAMPLES:")
 	fmt.Fprintln(os.Stderr, "  yolobox fork --name bruno codex")
 	fmt.Fprintln(os.Stderr, "  yolobox fork --name diane claude")
+	fmt.Fprintln(os.Stderr, "  yolobox fork --name jarvis --share game --share node_modules claude")
 	fmt.Fprintln(os.Stderr, "  yolobox fork resume bruno codex")
 }
 
@@ -96,12 +100,12 @@ func runForkCreate(args []string, projectDir string) error {
 	if err := os.MkdirAll(info.Copy, 0755); err != nil {
 		return fmt.Errorf("failed to create copied folder: %w", err)
 	}
-	for _, s := range merged {
-		fmt.Fprintf(os.Stderr, "Sharing %s (%s) — skipping copy\n", filepath.Join(info.Source, s.Path), s.Mode)
-	}
 	if err := copyForkSource(info.Source, info.Copy, merged); err != nil {
 		_ = os.RemoveAll(info.Copy)
 		return err
+	}
+	for _, s := range merged {
+		fmt.Fprintf(os.Stderr, "Sharing %s (%s) — skipped copy\n", filepath.Join(info.Source, s.Path), s.Mode)
 	}
 	resolved, err := createSharedPathPlaceholders(info.Source, info.Copy, merged)
 	if err != nil {
