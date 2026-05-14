@@ -259,6 +259,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  --pod <name>          Join existing Podman pod (shares its network)")
 	fmt.Fprintln(os.Stderr, "  --setup               Run interactive setup before starting")
 	fmt.Fprintln(os.Stderr, "  --mount <src:dst>     Extra mount (repeatable)")
+	fmt.Fprintln(os.Stderr, "  --share <p>[:ro|:rw]  Fork-only: skip copy, bind-mount from original (repeatable)")
 	fmt.Fprintln(os.Stderr, "  --exclude <glob>      Hide project paths from the container (repeatable)")
 	fmt.Fprintln(os.Stderr, "  --copy-as <src:dst>   Mount a file at a project path inside the container")
 	fmt.Fprintln(os.Stderr, "  --env <KEY=val>       Set environment variable (repeatable)")

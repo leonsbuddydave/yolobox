@@ -279,6 +279,12 @@ func printConfig(cfg Config) error {
 	printSliceConfigField("exclude", cfg.Exclude)
 	printSliceConfigField("copy_as", cfg.CopyAs)
 
+	if len(cfg.Fork.SharedPaths) > 0 {
+		fmt.Printf("%sfork.shared_paths:%s\n", colorBold, colorReset)
+		for _, sp := range cfg.Fork.SharedPaths {
+			fmt.Printf("  - %s (%s)\n", sp.Path, sp.Mode)
+		}
+	}
 	if len(cfg.Mounts) > 0 {
 		fmt.Printf("%smounts:%s\n", colorBold, colorReset)
 		for _, m := range cfg.Mounts {
