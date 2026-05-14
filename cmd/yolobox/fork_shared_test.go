@@ -224,3 +224,71 @@ func TestParseShareFlagRejectsTooManyColons(t *testing.T) {
 		t.Fatal("expected error for too many colons")
 	}
 }
+
+func TestMergeSharedPathsTomlOnly(t *testing.T) {
+	merged, err := mergeSharedPaths(
+		[]SharedPath{{Path: "game", Mode: "ro"}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(merged) != 1 || merged[0].Path != "game" || merged[0].Mode != "ro" {
+		t.Fatalf("unexpected merged: %+v", merged)
+	}
+}
+
+func TestMergeSharedPathsCliOverridesTomlMode(t *testing.T) {
+	merged, err := mergeSharedPaths(
+		[]SharedPath{{Path: "game", Mode: "ro"}},
+		[]SharedPath{{Path: "game", Mode: "rw"}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 entry after merge, got %d", len(merged))
+	}
+	if merged[0].Mode != "rw" {
+		t.Fatalf("CLI should win: got %+v", merged[0])
+	}
+}
+
+func TestMergeSharedPathsAppendsDistinct(t *testing.T) {
+	merged, err := mergeSharedPaths(
+		[]SharedPath{{Path: "game", Mode: "rw"}},
+		[]SharedPath{{Path: "vendored", Mode: "ro"}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 entries, got %+v", merged)
+	}
+}
+
+func TestMergeSharedPathsRunsOverlapCheck(t *testing.T) {
+	_, err := mergeSharedPaths(
+		[]SharedPath{{Path: "game", Mode: "rw"}},
+		[]SharedPath{{Path: "game/decompile", Mode: "ro"}},
+	)
+	if err == nil {
+		t.Fatal("expected nested-path error after merge")
+	}
+}
+
+func TestMergeSharedPathsCliDuplicateDeduplicated(t *testing.T) {
+	merged, err := mergeSharedPaths(
+		nil,
+		[]SharedPath{
+			{Path: "game", Mode: "ro"},
+			{Path: "game", Mode: "rw"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(merged) != 1 || merged[0].Mode != "rw" {
+		t.Fatalf("expected last CLI entry to win: %+v", merged)
+	}
+}

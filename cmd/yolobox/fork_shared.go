@@ -150,3 +150,35 @@ func parseShareFlag(value string) (SharedPath, error) {
 	}
 	return SharedPath{Path: pathStr, Mode: mode}, nil
 }
+
+// mergeSharedPaths combines TOML entries with CLI --share entries.
+// CLI entries override TOML entries on path collision (CLI wins).
+// Among CLI entries themselves, the last one wins.
+// After merge, the full list is re-validated (overlap and dedup checks).
+//
+// Returns the merged + validated list; on validation failure returns the error.
+func mergeSharedPaths(fromToml, fromCli []SharedPath) ([]SharedPath, error) {
+	// Use an ordered append + map-tracked indices so output order is:
+	// 1. TOML entries in declared order (with CLI-overridden modes where present)
+	// 2. CLI-only entries appended in declared order
+	indexByPath := make(map[string]int)
+	var result []SharedPath
+	for _, e := range fromToml {
+		clean := path.Clean(strings.TrimSpace(e.Path))
+		indexByPath[clean] = len(result)
+		result = append(result, SharedPath{Path: clean, Mode: e.Mode})
+	}
+	for _, e := range fromCli {
+		clean := path.Clean(strings.TrimSpace(e.Path))
+		if idx, ok := indexByPath[clean]; ok {
+			result[idx].Mode = e.Mode
+			continue
+		}
+		indexByPath[clean] = len(result)
+		result = append(result, SharedPath{Path: clean, Mode: e.Mode})
+	}
+	if err := validateSharedPaths(result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
