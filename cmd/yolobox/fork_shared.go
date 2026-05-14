@@ -63,6 +63,10 @@ type ForkSettings struct {
 //   - mode must be "rw" or "ro"
 //   - no two entries may have the same path
 //   - no entry's path may be a prefix of another entry's path
+//
+// On success, each entry's Path is normalized in place to its cleaned form
+// (e.g. "./game/" becomes "game"). Callers should rely on the post-call
+// values when comparing or printing entries.
 func validateSharedPaths(entries []SharedPath) error {
 	seen := make(map[string]struct{}, len(entries))
 	for i := range entries {
@@ -85,7 +89,10 @@ func validateSharedPaths(entries []SharedPath) error {
 			}
 		}
 		clean := path.Clean(strings.TrimPrefix(raw, "./"))
-		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
+		// path.Clean cannot yield ".." or a "../" prefix because the raw-segment
+		// scan above rejected any literal ".." segment. The only remaining
+		// degenerate result is ".", which comes from inputs like "." or "./".
+		if clean == "." {
 			return fmt.Errorf("shared_paths entry %q escapes the project root", raw)
 		}
 		e.Path = clean
