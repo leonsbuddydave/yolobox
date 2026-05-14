@@ -58,7 +58,9 @@ type Config struct {
 
 	Setup        bool       `toml:"-"`
 	RebuildImage bool       `toml:"-"`
-	Fork         ForkConfig `toml:"-"`
+	ForkRun      ForkConfig `toml:"-"`
+
+	Fork ForkSettings `toml:"fork"`
 
 	ClipboardEndpoint string `toml:"-"`
 	ClipboardToken    string `toml:"-"`

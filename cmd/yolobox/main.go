@@ -203,7 +203,7 @@ func applyForkConfig(cfg *Config, fork *ForkConfig) {
 	if fork == nil || fork.Name == "" {
 		return
 	}
-	cfg.Fork = *fork
+	cfg.ForkRun = *fork
 	cfg.Env = append(cfg.Env,
 		"YOLOBOX_FORK_NAME="+fork.Name,
 		"YOLOBOX_FORK_SOURCE="+fork.Source,
@@ -657,7 +657,7 @@ func runShell(cfg Config) error {
 			// mergeConfig applies cfg's non-zero values on top of newCfg,
 			// so CLI/config-file settings win and setup fills the gaps.
 			mergeConfig(&newCfg, cfg)
-			newCfg.Fork = cfg.Fork
+			newCfg.ForkRun = cfg.ForkRun
 			cfg = newCfg
 		}
 	}
@@ -1078,10 +1078,10 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	}
 	projectMountTarget := absProject
 	containerWorkingDir := absProject
-	if cfg.Fork.Name != "" {
-		absProject = cfg.Fork.Copy
-		projectMountTarget = cfg.Fork.Source
-		containerWorkingDir = cfg.Fork.Source
+	if cfg.ForkRun.Name != "" {
+		absProject = cfg.ForkRun.Copy
+		projectMountTarget = cfg.ForkRun.Source
+		containerWorkingDir = cfg.ForkRun.Source
 	}
 
 	// cleanupPaths collects temp files/dirs created during arg building

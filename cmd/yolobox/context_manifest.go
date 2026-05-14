@@ -123,12 +123,12 @@ func buildContextManifest(cfg Config, projectDir string, command []string, inter
 	}
 
 	var fork *contextFork
-	if cfg.Fork.Name != "" {
+	if cfg.ForkRun.Name != "" {
 		fork = &contextFork{
-			Name:           cfg.Fork.Name,
-			Source:         cfg.Fork.Source,
-			Copy:           cfg.Fork.Copy,
-			ComposeProject: cfg.Fork.ComposeProject,
+			Name:           cfg.ForkRun.Name,
+			Source:         cfg.ForkRun.Source,
+			Copy:           cfg.ForkRun.Copy,
+			ComposeProject: cfg.ForkRun.ComposeProject,
 		}
 	}
 
