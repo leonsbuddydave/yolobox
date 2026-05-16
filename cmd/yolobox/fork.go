@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -101,7 +102,7 @@ func runForkCreate(args []string, projectDir string) error {
 		return fmt.Errorf("failed to create copied folder: %w", err)
 	}
 	if err := copyForkSource(info.Source, info.Copy, merged); err != nil {
-		_ = os.RemoveAll(info.Copy)
+		_ = removeForkCopy(info.Copy)
 		return err
 	}
 	for _, s := range merged {
@@ -109,7 +110,7 @@ func runForkCreate(args []string, projectDir string) error {
 	}
 	resolved, err := createSharedPathPlaceholders(info.Source, info.Copy, merged)
 	if err != nil {
-		_ = os.RemoveAll(info.Copy)
+		_ = removeForkCopy(info.Copy)
 		return err
 	}
 	info.SharedPaths = resolved
@@ -210,11 +211,24 @@ func runForkDiscard(args []string, projectDir string) error {
 	}
 
 	runComposeCleanup(info)
-	if err := os.RemoveAll(info.Copy); err != nil {
+	if err := removeForkCopy(info.Copy); err != nil {
 		return fmt.Errorf("failed to remove copied folder: %w", err)
 	}
 	success("Discarded fork %s", name)
 	return nil
+}
+
+// removeForkCopy removes the fork's copy directory. On darwin, it first strips
+// extended ACLs recursively — macOS Docker Desktop attaches a "deny delete"
+// ACL to dirs that have been used as bind-mount targets, which can persist
+// briefly after container teardown and block plain os.RemoveAll with EACCES.
+// chmod -RN is best-effort; if it fails (e.g. path doesn't exist), the
+// subsequent os.RemoveAll surfaces the real error.
+func removeForkCopy(path string) error {
+	if runtime.GOOS == "darwin" {
+		_ = exec.Command("chmod", "-RN", path).Run()
+	}
+	return os.RemoveAll(path)
 }
 
 func runForkedYolobox(info forkInfo, commandArgs []string) error {
