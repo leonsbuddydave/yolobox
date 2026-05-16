@@ -1297,6 +1297,18 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 				}
 			}
 		}
+		// Rewrite host paths in known_marketplaces.json so the in-container
+		// Claude can find marketplaces under /home/yolo instead of the host's
+		// home dir.
+		marketplacesSrc := filepath.Join(claudeConfigDir, "plugins", "known_marketplaces.json")
+		if rewritten := preprocessClaudeMarketplaces(marketplacesSrc, home); rewritten != "" {
+			cleanupPaths = append(cleanupPaths, rewritten)
+			if appleContainer {
+				appleContainerFiles[rewritten] = "claude/.claude/plugins/known_marketplaces.json"
+			} else {
+				args = append(args, "-v", rewritten+":/host-claude/.claude/plugins/known_marketplaces.json:ro")
+			}
+		}
 	}
 
 	// Mount Gemini config from host to staging area (copied to /home/yolo by entrypoint)

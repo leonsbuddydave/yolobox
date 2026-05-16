@@ -2328,6 +2328,60 @@ func TestConcurrentPreprocessClaudeConfig(t *testing.T) {
 	}
 }
 
+func TestBuildRunArgsClaudeConfigRewritesKnownMarketplaces(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	pluginsDir := filepath.Join(home, ".claude", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mkpFile := filepath.Join(pluginsDir, "known_marketplaces.json")
+	mkpContent := `{"official": {"installLocation": "` + home + `/.claude/plugins/marketplaces/official"}}`
+	if err := os.WriteFile(mkpFile, []byte(mkpContent), 0644); err != nil {
+		t.Fatalf("write mkp: %v", err)
+	}
+
+	cfg := Config{Image: "test-image", ClaudeConfig: true}
+	args, cleanup, err := buildRunArgs(cfg, t.TempDir(), []string{"bash"}, false)
+	if err != nil {
+		t.Fatalf("buildRunArgs: %v", err)
+	}
+	t.Cleanup(func() {
+		for _, p := range cleanup {
+			_ = os.RemoveAll(p)
+		}
+	})
+
+	var src string
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] != "-v" {
+			continue
+		}
+		idx := strings.Index(args[i+1], ":/host-claude/.claude/plugins/known_marketplaces.json")
+		if idx == -1 {
+			continue
+		}
+		src = args[i+1][:idx]
+		break
+	}
+	if src == "" {
+		t.Fatalf("expected a -v mount for known_marketplaces.json, got args=%v", args)
+	}
+
+	body, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read rewritten: %v", err)
+	}
+	if strings.Contains(string(body), home) {
+		t.Fatalf("rewritten file still contains host home %s:\n%s", home, body)
+	}
+	if !strings.Contains(string(body), "/home/yolo/.claude/plugins/marketplaces/official") {
+		t.Fatalf("rewritten file missing /home/yolo path:\n%s", body)
+	}
+}
+
 func TestDirContainsSymlinks(t *testing.T) {
 	// Directory with no symlinks
 	dir := t.TempDir()
