@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -294,5 +295,55 @@ shared_paths = ["game"]
 	}
 	if len(resolved) != 1 || resolved[0].Path != "game" {
 		t.Fatalf("expected resolved=[game], got %+v", resolved)
+	}
+}
+
+func TestRemoveForkCopyHappyPath(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "fork")
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "file"), []byte("hi"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := removeForkCopy(dir); err != nil {
+		t.Fatalf("removeForkCopy: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected dir gone, got err=%v", err)
+	}
+}
+
+func TestRemoveForkCopyStripsDenyDeleteACL(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("ACL stripping is only relevant on darwin")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, "fork")
+	placeholder := filepath.Join(dir, "shared")
+	if err := os.MkdirAll(placeholder, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Attach the same ACL macOS Docker Desktop attaches to bind-mount target
+	// dirs. Use the current user (matches what Docker actually attaches).
+	username := os.Getenv("USER")
+	if username == "" {
+		t.Skip("USER env var not set; cannot construct ACL entry")
+	}
+	if out, err := exec.Command("chmod", "+a", "user:"+username+" deny delete", placeholder).CombinedOutput(); err != nil {
+		t.Skipf("chmod +a failed (environment may not permit ACLs): %v: %s", err, out)
+	}
+	// Confirm plain RemoveAll fails — if not, the test premise is wrong and
+	// we should rethink the fix.
+	if err := os.RemoveAll(placeholder); err == nil {
+		t.Fatal("expected os.RemoveAll to fail on ACL-protected dir, but it succeeded — test premise is invalid")
+	}
+	// Our helper should succeed end-to-end.
+	if err := removeForkCopy(dir); err != nil {
+		t.Fatalf("removeForkCopy with deny-delete ACL: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected dir gone after removeForkCopy, got err=%v", err)
 	}
 }
