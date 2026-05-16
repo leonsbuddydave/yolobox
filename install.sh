@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="finbarr/yolobox"
+REPO="leonsbuddydave/yolobox"
 REPO_URL="https://github.com/${REPO}.git"
 
 # Colors
@@ -83,6 +83,11 @@ download_binary() {
     mkdir -p "$bindir"
     install -m 0755 "$tmp" "$bindir/yolobox"
     rm -f "$tmp"
+    # Fork release ships unsigned macOS binaries; strip the quarantine attr so
+    # Gatekeeper doesn't block first launch. Best-effort, silent on failure.
+    if [ "$(uname -s)" = "Darwin" ]; then
+      xattr -d com.apple.quarantine "$bindir/yolobox" 2>/dev/null || true
+    fi
     return 0
   else
     rm -f "$tmp"
