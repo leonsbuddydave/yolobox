@@ -51,7 +51,7 @@ func doVersionCheck() {
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("https://api.github.com/repos/finbarr/yolobox/releases/latest")
+	resp, err := client.Get("https://api.github.com/repos/leonsbuddydave/yolobox/releases/latest")
 	if err != nil {
 		return
 	}
@@ -86,7 +86,7 @@ func doVersionCheck() {
 
 func showUpdateMessage(latestVersion string) {
 	if isNewerVersion(latestVersion, Version) {
-		fmt.Fprintf(os.Stderr, "\n%s💡 yolobox v%s available:%s https://github.com/finbarr/yolobox/releases/tag/v%s\n",
+		fmt.Fprintf(os.Stderr, "\n%s💡 yolobox v%s available:%s https://github.com/leonsbuddydave/yolobox/releases/tag/v%s\n",
 			colorYellow, latestVersion, colorReset, latestVersion)
 		fmt.Fprintf(os.Stderr, "   Run %syolobox upgrade%s to update\n\n", colorBold, colorReset)
 	}
