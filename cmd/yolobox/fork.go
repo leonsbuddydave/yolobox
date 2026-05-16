@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/finbarr/yolobox/cmd/yolobox/names"
 )
 
 var forkNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -44,15 +46,18 @@ func runFork(args []string, projectDir string) error {
 func printForkUsage() {
 	fmt.Fprintln(os.Stderr, "USAGE:")
 	fmt.Fprintln(os.Stderr, "  yolobox fork --name <env> <cmd...>       Run command in a named copied folder")
+	fmt.Fprintln(os.Stderr, "  yolobox fork --random <cmd...>           Run with a procedurally generated name")
 	fmt.Fprintln(os.Stderr, "  yolobox fork resume <env> [cmd...]       Reopen an existing copied folder")
 	fmt.Fprintln(os.Stderr, "  yolobox fork discard <env> --force       Delete a copied folder")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "FLAGS:")
 	fmt.Fprintln(os.Stderr, "  --share <p>[:ro|:rw]   Skip the fork copy and bind-mount <p> from the original repo (repeatable)")
+	fmt.Fprintln(os.Stderr, "  --random               Use a procedurally generated name (mutually exclusive with --name)")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "EXAMPLES:")
 	fmt.Fprintln(os.Stderr, "  yolobox fork --name bruno codex")
 	fmt.Fprintln(os.Stderr, "  yolobox fork --name diane claude")
+	fmt.Fprintln(os.Stderr, "  yolobox fork --random claude")
 	fmt.Fprintln(os.Stderr, "  yolobox fork --name jarvis --share game --share node_modules claude")
 	fmt.Fprintln(os.Stderr, "  yolobox fork resume bruno codex")
 }
@@ -61,8 +66,10 @@ func runForkCreate(args []string, projectDir string) error {
 	fs := flag.NewFlagSet("fork", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var name string
+	var random bool
 	var shareFlags stringSliceFlag
 	fs.StringVar(&name, "name", "", "developer/environment name")
+	fs.BoolVar(&random, "random", false, "use a procedurally generated name (mutually exclusive with --name)")
 	fs.Var(&shareFlags, "share", "share a project path (skip the fork copy, bind-mount from original). Repeatable. Form: <path>[:rw|:ro]")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -71,8 +78,19 @@ func runForkCreate(args []string, projectDir string) error {
 		}
 		return err
 	}
-	if name == "" {
-		return fmt.Errorf("yolobox fork requires --name for v1")
+	if name != "" && random {
+		return fmt.Errorf("--name and --random are mutually exclusive")
+	}
+	if name == "" && !random {
+		return fmt.Errorf("yolobox fork requires --name or --random")
+	}
+	if random {
+		generated, err := generateForkName(projectDir)
+		if err != nil {
+			return err
+		}
+		name = generated
+		info("Forking as %s", name)
 	}
 	if err := validateForkName(name); err != nil {
 		return err
@@ -381,6 +399,27 @@ func composeProjectName(source, forkName string) string {
 	hash := sha1.Sum([]byte(source))
 	shortHash := hex.EncodeToString(hash[:])[:10]
 	return slugify(filepath.Base(source), "folder") + "-" + shortHash + "-" + forkName
+}
+
+func generateForkName(projectDir string) (string, error) {
+	gen, err := names.Load()
+	if err != nil {
+		return "", fmt.Errorf("load name generator: %w", err)
+	}
+	source, err := filepath.Abs(projectDir)
+	if err != nil {
+		return "", err
+	}
+	source, err = filepath.EvalSymlinks(source)
+	if err != nil {
+		return "", err
+	}
+	forkBase := filepath.Join(filepath.Dir(source), ".yolobox-forks", slugify(filepath.Base(source), "folder"))
+	collides := func(candidate string) bool {
+		_, err := os.Stat(filepath.Join(forkBase, candidate))
+		return err == nil
+	}
+	return gen.Generate(names.Options{Collides: collides})
 }
 
 func slugify(value, fallback string) string {

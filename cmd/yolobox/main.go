@@ -145,6 +145,8 @@ func runCmdArgs(args []string, projectDir string, fork *ForkConfig) error {
 		return runCommand(cfg, rest, false)
 	case "fork":
 		return runFork(args[1:], projectDir)
+	case "who":
+		return runWho(args[1:], projectDir)
 	case "setup":
 		_, err := runSetup()
 		return err
@@ -240,6 +242,8 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  yolobox                     Start interactive shell in sandbox")
 	fmt.Fprintln(os.Stderr, "  yolobox run <cmd...>        Run a command in sandbox")
 	fmt.Fprintln(os.Stderr, "  yolobox fork --name <env> <cmd>  Run in a named copied folder with Compose namespace")
+	fmt.Fprintln(os.Stderr, "  yolobox fork --random <cmd>      Run in a copied folder with a generated name")
+	fmt.Fprintln(os.Stderr, "  yolobox who [--all]              List forks and stop/discard/shell into them")
 	fmt.Fprintln(os.Stderr, "  yolobox setup               Configure yolobox settings")
 	fmt.Fprintln(os.Stderr, "  yolobox upgrade             Upgrade binary and pull latest image")
 	fmt.Fprintln(os.Stderr, "  yolobox config              Print resolved configuration")
@@ -1118,6 +1122,15 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	}
 
 	args = append(args, "-e", "YOLOBOX=1")
+
+	if cfg.ForkRun.Name != "" {
+		args = append(args,
+			"--label", "com.yolobox.fork=true",
+			"--label", "com.yolobox.fork.name="+cfg.ForkRun.Name,
+			"--label", "com.yolobox.fork.source="+cfg.ForkRun.Source,
+			"--label", "com.yolobox.fork.compose_project="+cfg.ForkRun.ComposeProject,
+		)
+	}
 
 	if !cfg.NoProject {
 		args = append(args, "-w", containerWorkingDir)
