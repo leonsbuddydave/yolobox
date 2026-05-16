@@ -1297,16 +1297,21 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 				}
 			}
 		}
-		// Rewrite host paths in known_marketplaces.json so the in-container
-		// Claude can find marketplaces under /home/yolo instead of the host's
-		// home dir.
-		marketplacesSrc := filepath.Join(claudeConfigDir, "plugins", "known_marketplaces.json")
-		if rewritten := preprocessClaudeMarketplaces(marketplacesSrc, home); rewritten != "" {
+		// Rewrite host paths in known claude config JSONs so the in-container
+		// Claude can find plugin/hook/MCP paths under /home/yolo instead of
+		// the host's home dir.
+		for _, rel := range claudeConfigPathRewriteFiles {
+			src := filepath.Join(claudeConfigDir, rel)
+			rewritten := preprocessClaudeConfigJSON(src, home)
+			if rewritten == "" {
+				continue
+			}
 			cleanupPaths = append(cleanupPaths, rewritten)
+			containerPath := "/host-claude/.claude/" + filepath.ToSlash(rel)
 			if appleContainer {
-				appleContainerFiles[rewritten] = "claude/.claude/plugins/known_marketplaces.json"
+				appleContainerFiles[rewritten] = "claude/.claude/" + filepath.ToSlash(rel)
 			} else {
-				args = append(args, "-v", rewritten+":/host-claude/.claude/plugins/known_marketplaces.json:ro")
+				args = append(args, "-v", rewritten+":"+containerPath+":ro")
 			}
 		}
 	}
