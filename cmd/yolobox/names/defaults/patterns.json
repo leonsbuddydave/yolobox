@@ -1,0 +1,8 @@
+{
+  "mode": "append",
+  "items": [
+    { "pattern": "{adjective}-{noun}", "weight": 6 },
+    { "pattern": "{adjective}-{name}", "weight": 3 },
+    { "pattern": "{verb}-{noun}", "weight": 1 }
+  ]
+}
