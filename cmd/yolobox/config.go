@@ -15,10 +15,11 @@ type CustomizeConfig struct {
 }
 
 type ForkConfig struct {
-	Name           string `toml:"-"`
-	Source         string `toml:"-"`
-	Copy           string `toml:"-"`
-	ComposeProject string `toml:"-"`
+	Name           string       `toml:"-"`
+	Source         string       `toml:"-"`
+	Copy           string       `toml:"-"`
+	ComposeProject string       `toml:"-"`
+	SharedPaths    []SharedPath `toml:"-"`
 }
 
 type Config struct {
@@ -58,7 +59,9 @@ type Config struct {
 
 	Setup        bool       `toml:"-"`
 	RebuildImage bool       `toml:"-"`
-	Fork         ForkConfig `toml:"-"`
+	ForkRun      ForkConfig `toml:"-"`
+
+	Fork ForkSettings `toml:"fork"`
 
 	ClipboardEndpoint string `toml:"-"`
 	ClipboardToken    string `toml:"-"`
@@ -149,6 +152,9 @@ func mergeConfig(dst *Config, src Config) {
 	}
 	if len(src.CopyAs) > 0 {
 		dst.CopyAs = append([]string{}, src.CopyAs...)
+	}
+	if len(src.Fork.SharedPaths) > 0 {
+		dst.Fork.SharedPaths = append([]SharedPath{}, src.Fork.SharedPaths...)
 	}
 	if src.SSHAgent {
 		dst.SSHAgent = true
@@ -273,6 +279,12 @@ func printConfig(cfg Config) error {
 	printSliceConfigField("exclude", cfg.Exclude)
 	printSliceConfigField("copy_as", cfg.CopyAs)
 
+	if len(cfg.Fork.SharedPaths) > 0 {
+		fmt.Printf("%sfork.shared_paths:%s\n", colorBold, colorReset)
+		for _, sp := range cfg.Fork.SharedPaths {
+			fmt.Printf("  - %s (%s)\n", sp.Path, sp.Mode)
+		}
+	}
 	if len(cfg.Mounts) > 0 {
 		fmt.Printf("%smounts:%s\n", colorBold, colorReset)
 		for _, m := range cfg.Mounts {

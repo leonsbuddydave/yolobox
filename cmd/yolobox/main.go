@@ -203,7 +203,7 @@ func applyForkConfig(cfg *Config, fork *ForkConfig) {
 	if fork == nil || fork.Name == "" {
 		return
 	}
-	cfg.Fork = *fork
+	cfg.ForkRun = *fork
 	cfg.Env = append(cfg.Env,
 		"YOLOBOX_FORK_NAME="+fork.Name,
 		"YOLOBOX_FORK_SOURCE="+fork.Source,
@@ -259,6 +259,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  --pod <name>          Join existing Podman pod (shares its network)")
 	fmt.Fprintln(os.Stderr, "  --setup               Run interactive setup before starting")
 	fmt.Fprintln(os.Stderr, "  --mount <src:dst>     Extra mount (repeatable)")
+	fmt.Fprintln(os.Stderr, "  --share <p>[:ro|:rw]  Fork-only: skip copy, bind-mount from original (repeatable)")
 	fmt.Fprintln(os.Stderr, "  --exclude <glob>      Hide project paths from the container (repeatable)")
 	fmt.Fprintln(os.Stderr, "  --copy-as <src:dst>   Mount a file at a project path inside the container")
 	fmt.Fprintln(os.Stderr, "  --env <KEY=val>       Set environment variable (repeatable)")
@@ -657,7 +658,7 @@ func runShell(cfg Config) error {
 			// mergeConfig applies cfg's non-zero values on top of newCfg,
 			// so CLI/config-file settings win and setup fills the gaps.
 			mergeConfig(&newCfg, cfg)
-			newCfg.Fork = cfg.Fork
+			newCfg.ForkRun = cfg.ForkRun
 			cfg = newCfg
 		}
 	}
@@ -1078,10 +1079,10 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	}
 	projectMountTarget := absProject
 	containerWorkingDir := absProject
-	if cfg.Fork.Name != "" {
-		absProject = cfg.Fork.Copy
-		projectMountTarget = cfg.Fork.Source
-		containerWorkingDir = cfg.Fork.Source
+	if cfg.ForkRun.Name != "" {
+		absProject = cfg.ForkRun.Copy
+		projectMountTarget = cfg.ForkRun.Source
+		containerWorkingDir = cfg.ForkRun.Source
 	}
 
 	// cleanupPaths collects temp files/dirs created during arg building
@@ -1202,6 +1203,20 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 		args = append(args, "-v", projectMount)
 	}
 
+	// Shared paths (fork-mode only): overlay original host paths on top of the
+	// project mount so forks see live data instead of copies.
+	if cfg.ForkRun.Name != "" && len(cfg.ForkRun.SharedPaths) > 0 {
+		if cfg.NoProject {
+			warn("shared_paths ignored: --no-project is set, no anchor for shared mounts")
+		} else {
+			kept, dropped := filterSharedAgainstExclude(cfg.ForkRun.SharedPaths, cfg.Exclude)
+			for _, d := range dropped {
+				warn("shared_paths: %q collides with --exclude pattern; skipping bind-mount", d.Path)
+			}
+			args = append(args, buildSharedPathMountArgs(cfg.ForkRun.Source, kept)...)
+		}
+	}
+
 	// Named volumes for persistence (skip if --scratch).
 	// Rootless Podman on SELinux-enabled hosts assigns per-container MCS
 	// labels; without :Z, files created in one run are inaccessible to the
@@ -1280,6 +1295,18 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 						_ = os.Remove(f.Name())
 					}
 				}
+			}
+		}
+		// Rewrite host paths in known_marketplaces.json so the in-container
+		// Claude can find marketplaces under /home/yolo instead of the host's
+		// home dir.
+		marketplacesSrc := filepath.Join(claudeConfigDir, "plugins", "known_marketplaces.json")
+		if rewritten := preprocessClaudeMarketplaces(marketplacesSrc, home); rewritten != "" {
+			cleanupPaths = append(cleanupPaths, rewritten)
+			if appleContainer {
+				appleContainerFiles[rewritten] = "claude/.claude/plugins/known_marketplaces.json"
+			} else {
+				args = append(args, "-v", rewritten+":/host-claude/.claude/plugins/known_marketplaces.json:ro")
 			}
 		}
 	}

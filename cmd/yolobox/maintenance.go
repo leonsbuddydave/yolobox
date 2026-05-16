@@ -125,7 +125,7 @@ type githubRelease struct {
 func upgradeYolobox() error {
 	info("Checking for updates...")
 
-	resp, err := http.Get("https://api.github.com/repos/finbarr/yolobox/releases/latest")
+	resp, err := http.Get("https://api.github.com/repos/leonsbuddydave/yolobox/releases/latest")
 	if err != nil {
 		return fmt.Errorf("failed to check for updates: %w", err)
 	}

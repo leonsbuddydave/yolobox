@@ -2328,6 +2328,60 @@ func TestConcurrentPreprocessClaudeConfig(t *testing.T) {
 	}
 }
 
+func TestBuildRunArgsClaudeConfigRewritesKnownMarketplaces(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	pluginsDir := filepath.Join(home, ".claude", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mkpFile := filepath.Join(pluginsDir, "known_marketplaces.json")
+	mkpContent := `{"official": {"installLocation": "` + home + `/.claude/plugins/marketplaces/official"}}`
+	if err := os.WriteFile(mkpFile, []byte(mkpContent), 0644); err != nil {
+		t.Fatalf("write mkp: %v", err)
+	}
+
+	cfg := Config{Image: "test-image", ClaudeConfig: true}
+	args, cleanup, err := buildRunArgs(cfg, t.TempDir(), []string{"bash"}, false)
+	if err != nil {
+		t.Fatalf("buildRunArgs: %v", err)
+	}
+	t.Cleanup(func() {
+		for _, p := range cleanup {
+			_ = os.RemoveAll(p)
+		}
+	})
+
+	var src string
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] != "-v" {
+			continue
+		}
+		idx := strings.Index(args[i+1], ":/host-claude/.claude/plugins/known_marketplaces.json")
+		if idx == -1 {
+			continue
+		}
+		src = args[i+1][:idx]
+		break
+	}
+	if src == "" {
+		t.Fatalf("expected a -v mount for known_marketplaces.json, got args=%v", args)
+	}
+
+	body, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read rewritten: %v", err)
+	}
+	if strings.Contains(string(body), home) {
+		t.Fatalf("rewritten file still contains host home %s:\n%s", home, body)
+	}
+	if !strings.Contains(string(body), "/home/yolo/.claude/plugins/marketplaces/official") {
+		t.Fatalf("rewritten file missing /home/yolo path:\n%s", body)
+	}
+}
+
 func TestDirContainsSymlinks(t *testing.T) {
 	// Directory with no symlinks
 	dir := t.TempDir()
@@ -2539,5 +2593,74 @@ func TestFindSSHAgentSocketMacOSNoSSHAuthSock(t *testing.T) {
 	// If it succeeds, the socket path should be non-empty
 	if sock == "" {
 		t.Error("expected non-empty socket path")
+	}
+}
+
+func TestBuildRunArgsForkSharedPathsAppendedAfterProjectMount(t *testing.T) {
+	projectDir := t.TempDir()
+	fork := ForkConfig{
+		Name:           "bruno",
+		Source:         filepath.Join(projectDir, "source"),
+		Copy:           filepath.Join(projectDir, "copy"),
+		ComposeProject: "folder-123-bruno",
+		SharedPaths: []SharedPath{
+			{Path: "game", Mode: "rw"},
+			{Path: "vendored", Mode: "ro"},
+		},
+	}
+	cfg := Config{Image: "test-image"}
+	applyForkConfig(&cfg, &fork)
+
+	args, _, err := buildRunArgs(cfg, fork.Copy, []string{"bash"}, false)
+	if err != nil {
+		t.Fatalf("buildRunArgs: %v", err)
+	}
+
+	projectMountIdx := -1
+	rwShareIdx := -1
+	roShareIdx := -1
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] != "-v" {
+			continue
+		}
+		switch args[i+1] {
+		case fork.Copy + ":" + fork.Source:
+			projectMountIdx = i
+		case fork.Source + "/game:" + fork.Source + "/game":
+			rwShareIdx = i
+		case fork.Source + "/vendored:" + fork.Source + "/vendored:ro":
+			roShareIdx = i
+		}
+	}
+	if projectMountIdx == -1 {
+		t.Fatalf("missing project mount in args %v", args)
+	}
+	if rwShareIdx == -1 || roShareIdx == -1 {
+		t.Fatalf("missing shared-path mounts in args %v", args)
+	}
+	if rwShareIdx < projectMountIdx || roShareIdx < projectMountIdx {
+		t.Fatalf("shared mounts must come AFTER project mount; got proj=%d rw=%d ro=%d", projectMountIdx, rwShareIdx, roShareIdx)
+	}
+}
+
+func TestBuildRunArgsForkSharedPathsIgnoredWithNoProject(t *testing.T) {
+	projectDir := t.TempDir()
+	fork := ForkConfig{
+		Name:        "bruno",
+		Source:      filepath.Join(projectDir, "source"),
+		Copy:        filepath.Join(projectDir, "copy"),
+		SharedPaths: []SharedPath{{Path: "game", Mode: "rw"}},
+	}
+	cfg := Config{Image: "test-image", NoProject: true}
+	applyForkConfig(&cfg, &fork)
+
+	args, _, err := buildRunArgs(cfg, fork.Copy, []string{"bash"}, false)
+	if err != nil {
+		t.Fatalf("buildRunArgs: %v", err)
+	}
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-v" && strings.Contains(args[i+1], "/game") {
+			t.Fatalf("shared mount should not be present with --no-project, got %s", args[i+1])
+		}
 	}
 }

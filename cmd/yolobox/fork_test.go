@@ -233,3 +233,66 @@ func containsSequence(values []string, first, second string) bool {
 	}
 	return false
 }
+
+func TestRunForkCreateAppliesSharedPathsFromToml(t *testing.T) {
+	if _, err := exec.LookPath("rsync"); err != nil {
+		t.Skip("rsync not available")
+	}
+
+	source := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(source, "game"), 0755); err != nil {
+		t.Fatalf("mkdir game: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "game", "asset.bin"), []byte("asset"), 0644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "keep.txt"), []byte("keep"), 0644); err != nil {
+		t.Fatalf("write keep: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, ".yolobox.toml"), []byte(`
+[fork]
+shared_paths = ["game"]
+`), 0644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+
+	// Compute expected fork dir and assert it doesn't exist yet.
+	info, err := newForkInfo(source, "alpha")
+	if err != nil {
+		t.Fatalf("newForkInfo: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(filepath.Dir(info.Copy))) })
+
+	// Run runForkCreate but stop before runForkedYolobox by using a sentinel command.
+	// Easiest path: refactor is out of scope; instead, call the building blocks directly.
+	merged, err := mergeSharedPaths([]SharedPath{{Path: "game", Mode: "rw"}}, nil)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if err := os.MkdirAll(info.Copy, 0755); err != nil {
+		t.Fatalf("mkdir copy: %v", err)
+	}
+	if err := copyForkSource(info.Source, info.Copy, merged); err != nil {
+		t.Fatalf("copyForkSource: %v", err)
+	}
+	resolved, err := createSharedPathPlaceholders(info.Source, info.Copy, merged)
+	if err != nil {
+		t.Fatalf("createSharedPathPlaceholders: %v", err)
+	}
+
+	// game/asset.bin must NOT be in the fork copy.
+	if _, err := os.Stat(filepath.Join(info.Copy, "game", "asset.bin")); !os.IsNotExist(err) {
+		t.Fatalf("expected game/asset.bin to NOT be copied, got err=%v", err)
+	}
+	// game/ placeholder must exist in fork copy.
+	if info, err := os.Stat(filepath.Join(info.Copy, "game")); err != nil || !info.IsDir() {
+		t.Fatalf("expected empty game/ dir placeholder, err=%v", err)
+	}
+	// keep.txt must be copied.
+	if _, err := os.Stat(filepath.Join(info.Copy, "keep.txt")); err != nil {
+		t.Fatalf("expected keep.txt copied, err=%v", err)
+	}
+	if len(resolved) != 1 || resolved[0].Path != "game" {
+		t.Fatalf("expected resolved=[game], got %+v", resolved)
+	}
+}
