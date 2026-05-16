@@ -2328,19 +2328,45 @@ func TestConcurrentPreprocessClaudeConfig(t *testing.T) {
 	}
 }
 
-func TestBuildRunArgsClaudeConfigRewritesKnownMarketplaces(t *testing.T) {
+func TestBuildRunArgsClaudeConfigRewritesAllConfigPaths(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	pluginsDir := filepath.Join(home, ".claude", "plugins")
+	claudeDir := filepath.Join(home, ".claude")
+	pluginsDir := filepath.Join(claudeDir, "plugins")
 	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+		t.Fatalf("mkdir plugins: %v", err)
 	}
+
 	mkpFile := filepath.Join(pluginsDir, "known_marketplaces.json")
 	mkpContent := `{"official": {"installLocation": "` + home + `/.claude/plugins/marketplaces/official"}}`
 	if err := os.WriteFile(mkpFile, []byte(mkpContent), 0644); err != nil {
 		t.Fatalf("write mkp: %v", err)
+	}
+
+	installedFile := filepath.Join(pluginsDir, "installed_plugins.json")
+	installedContent := `{
+  "plugins": {
+    "lab-notebook": [
+      {"installPath": "` + home + `/.claude/plugins/marketplaces/official/lab-notebook", "version": "1.0.0"}
+    ]
+  }
+}`
+	if err := os.WriteFile(installedFile, []byte(installedContent), 0644); err != nil {
+		t.Fatalf("write installed: %v", err)
+	}
+
+	settingsFile := filepath.Join(claudeDir, "settings.json")
+	settingsContent := `{
+  "hooks": {
+    "PostToolUse": [
+      {"hooks": [{"command": "` + home + `/.claude/lab-notebook/bin/x.sh"}]}
+    ]
+  }
+}`
+	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0644); err != nil {
+		t.Fatalf("write settings: %v", err)
 	}
 
 	cfg := Config{Image: "test-image", ClaudeConfig: true}
@@ -2354,31 +2380,60 @@ func TestBuildRunArgsClaudeConfigRewritesKnownMarketplaces(t *testing.T) {
 		}
 	})
 
-	var src string
-	for i := 0; i+1 < len(args); i++ {
-		if args[i] != "-v" {
-			continue
-		}
-		idx := strings.Index(args[i+1], ":/host-claude/.claude/plugins/known_marketplaces.json")
-		if idx == -1 {
-			continue
-		}
-		src = args[i+1][:idx]
-		break
-	}
-	if src == "" {
-		t.Fatalf("expected a -v mount for known_marketplaces.json, got args=%v", args)
+	// Each known config file should produce a -v mount at the matching
+	// /host-claude path, with a rewritten temp file holding /home/yolo paths.
+	cases := []struct {
+		relPath        string
+		mountPath      string
+		mustContain    string
+		mustNotContain string
+	}{
+		{
+			relPath:        "plugins/known_marketplaces.json",
+			mountPath:      "/host-claude/.claude/plugins/known_marketplaces.json",
+			mustContain:    "/home/yolo/.claude/plugins/marketplaces/official",
+			mustNotContain: home,
+		},
+		{
+			relPath:        "plugins/installed_plugins.json",
+			mountPath:      "/host-claude/.claude/plugins/installed_plugins.json",
+			mustContain:    "/home/yolo/.claude/plugins/marketplaces/official/lab-notebook",
+			mustNotContain: home,
+		},
+		{
+			relPath:        "settings.json",
+			mountPath:      "/host-claude/.claude/settings.json",
+			mustContain:    "/home/yolo/.claude/lab-notebook/bin/x.sh",
+			mustNotContain: home,
+		},
 	}
 
-	body, err := os.ReadFile(src)
-	if err != nil {
-		t.Fatalf("read rewritten: %v", err)
-	}
-	if strings.Contains(string(body), home) {
-		t.Fatalf("rewritten file still contains host home %s:\n%s", home, body)
-	}
-	if !strings.Contains(string(body), "/home/yolo/.claude/plugins/marketplaces/official") {
-		t.Fatalf("rewritten file missing /home/yolo path:\n%s", body)
+	for _, tc := range cases {
+		var src string
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] != "-v" {
+				continue
+			}
+			idx := strings.Index(args[i+1], ":"+tc.mountPath)
+			if idx == -1 {
+				continue
+			}
+			src = args[i+1][:idx]
+			break
+		}
+		if src == "" {
+			t.Fatalf("expected a -v mount for %s, got args=%v", tc.relPath, args)
+		}
+		body, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatalf("read rewritten %s: %v", tc.relPath, err)
+		}
+		if strings.Contains(string(body), tc.mustNotContain) {
+			t.Fatalf("%s rewritten file still contains host home %s:\n%s", tc.relPath, tc.mustNotContain, body)
+		}
+		if !strings.Contains(string(body), tc.mustContain) {
+			t.Fatalf("%s rewritten file missing expected path %q:\n%s", tc.relPath, tc.mustContain, body)
+		}
 	}
 }
 
